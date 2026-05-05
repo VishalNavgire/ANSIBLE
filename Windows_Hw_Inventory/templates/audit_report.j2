@@ -53,3 +53,22 @@ No applications found
 {% else %}
 No updates found
 {% endif %}
+
+--- Stopped Services ---
+{% if audit.StoppedServices | length == 0 %}
+No stopped services found
+{% else %}
+{% for svc in audit.StoppedServices[:10] %}
+- {{ svc.Name }} ({{ svc.DisplayName }}) - StartType: {{ svc.StartType }}
+{% endfor %}
+{% endif %}
+
+--- High CPU Processes ---
+{% for proc in audit.HighResourceProcess.TopCPU %}
+- {{ proc.Name }} (PID: {{ proc.Id }}) - CPU Time: {{ proc.CPU }}
+{% endfor %}
+
+--- High Memory Processes ---
+{% for proc in audit.HighResourceProcess.TopMemory %}
+- {{ proc.Name }} (PID: {{ proc.Id }}) - Memory: {{ proc.MemoryMB }} MB
+{% endfor %}
