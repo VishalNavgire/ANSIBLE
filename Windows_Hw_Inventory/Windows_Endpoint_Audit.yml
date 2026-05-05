@@ -73,6 +73,24 @@
                          Select-String "AzureAdJoined", "EnterpriseJoined", "DeviceDisplayName" |
                          Out-String
 
+          $stoppedServices = Get-Service |
+              Where-Object { $_.Status -eq 'Stopped' } |
+              Select-Object Name, DisplayName, StartType |
+              Sort-Object Name
+
+          $topCPU = Get-Process |
+              Sort-Object CPU -Descending |
+              Select-Object -First 5 Name, Id, CPU
+
+          $topMemory = Get-Process |
+              Sort-Object WorkingSet -Descending |
+              Select-Object -First 5 Name, Id, @{Name="MemoryMB";Expression={[math]::Round($_.WorkingSet / 1MB, 2)}}
+
+          $highResourceProcesses = @{
+              TopCPU    = $topCPU
+              TopMemory = $topMemory
+          }
+
           $fullAudit = [PSCustomObject]@{
               FileTimestamp  = $filenameTS
               Timestamp      = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
@@ -84,6 +102,8 @@
               EntraIDStatus  = $azureStatus.Trim()
               InstalledApps  = $apps
               Updates        = $updates
+              StoppedServices     = $stoppedServices
+              HighResourceProcess = $highResourceProcesses
           }
 
           $fullAudit | ConvertTo-Json -Depth 10
