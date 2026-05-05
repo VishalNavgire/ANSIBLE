@@ -1,0 +1,55 @@
+===== Windows Endpoint Audit Report =====
+
+Timestamp: {{ audit.Timestamp }}
+Host: {{ inventory_hostname }}
+
+--- Hardware ---
+Model: {{ audit.Hardware.Model }}
+Serial: {{ audit.Hardware.SerialNumber }}
+RAM (GB): {{ audit.Hardware.RAM_GB }}
+
+--- OS Info ---
+Product: {{ audit.RegistryConfig.ProductName }}
+Version: {{ audit.RegistryConfig.DisplayVersion }}
+Build: {{ audit.RegistryConfig.CurrentBuild }}
+
+--- User Profiles ---
+{% for user in audit.UserProfiles %}
+- {{ user.ProfilePath }} ({{ user.SID }})
+{% endfor %}
+
+--- Local Administrators ---
+{% if audit.LocalAdmins is string %}
+{{ audit.LocalAdmins }}
+{% else %}
+{% for admin in audit.LocalAdmins %}
+- {{ admin.Name }} ({{ admin.ObjectClass }})
+{% endfor %}
+{% endif %}
+
+--- Scheduled Tasks ---
+{% for task in audit.ScheduledTasks %}
+- {{ task.TaskName }} ({{ task.TaskPath }})
+{% endfor %}
+
+--- Entra ID Status ---
+{{ audit.EntraIDStatus }}
+
+
+--- Installed Applications ---
+{% if audit.InstalledApps | length > 0 %}
+{% for app in audit.InstalledApps[:20] %}
+- {{ app.DisplayName }} ({{ app.DisplayVersion | default('N/A') }}) - {{ app.Publisher | default('Unknown') }}
+{% endfor %}
+{% else %}
+No applications found
+{% endif %}
+
+--- Recent Windows Updates ---
+{% if audit.Updates | length > 0 %}
+{% for update in audit.Updates[:10] %}
+- {{ update.HotFixID }} | {{ update.Description }} | Installed: {{ update.InstalledOn }}
+{% endfor %}
+{% else %}
+No updates found
+{% endif %}

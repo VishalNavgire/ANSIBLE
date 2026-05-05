@@ -1,0 +1,9 @@
+Standard project layout
+project/
+├── inventory/
+├── group_vars/
+├── host_vars/
+├── templates/
+├── files/
+├── roles/
+└── playbooks/

@@ -1,0 +1,101 @@
+---
+- name: Advanced Windows Endpoint Audit
+  hosts: windows
+  gather_facts: yes
+
+  vars:
+    base_path: "{{ lookup('env', 'HOME') }}/DataCollectionViaAnsible"
+
+  tasks:
+
+    - name: Ensure collection directory exists on Control Node
+      ansible.builtin.file:
+        path: "{{ base_path }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Collect Hardware, Registry, Users Profiles, Local Admins, Schd Tasks, Updates, Installed Apps and Entra ID Status
+      ansible.windows.win_powershell:
+        script: |
+
+          $deviceTime = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+          $tz = (Get-TimeZone).Id.Replace(" ","_")
+          $filenameTS = "$deviceTime`_$tz"
+
+          $hw = [PSCustomObject]@{
+              Model        = (Get-CimInstance Win32_ComputerSystem).Model
+              SerialNumber = (Get-CimInstance Win32_BIOS).SerialNumber
+              RAM_GB       = [math]::Round((Get-CimInstance Win32_PhysicalMemory | Measure-Object Capacity -Sum).Sum / 1GB, 2)
+          }
+
+          $paths = @(
+              "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+              "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+              "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
+          )
+          $apps = Get-ItemProperty $paths -ErrorAction SilentlyContinue | 
+                  Where-Object { $_.DisplayName -ne $null } | 
+                  Select-Object DisplayName, DisplayVersion, Publisher | 
+                  Sort-Object DisplayName
+
+          $updates = Get-HotFix | Select-Object HotFixID, Description, InstalledOn | Sort-Object InstalledOn -Descending
+
+          $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+          $registryInfo = @{
+              ProductName   = $reg.ProductName
+              DisplayVersion = $reg.DisplayVersion
+              CurrentBuild  = $reg.CurrentBuild
+          }
+
+          $profiles = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" |
+              ForEach-Object {
+                  $p = Get-ItemProperty $_.PSPath
+                  [PSCustomObject]@{
+                      SID         = $_.PSChildName
+                      ProfilePath = $p.ProfileImagePath
+                  }
+              }
+
+          try {
+              $admins = Get-LocalGroupMember -Group "Administrators" |
+                        Select-Object Name, ObjectClass
+          } catch {
+              $admins = "Unable to fetch (requires admin privileges)"
+          }
+
+          $tasks = Get-ScheduledTask |
+                   Where-Object { $_.State -eq 'Ready' } |
+                   Select-Object -First 5 TaskName, TaskPath
+
+          $azureStatus = dsregcmd /status |
+                         Select-String "AzureAdJoined", "EnterpriseJoined", "DeviceDisplayName" |
+                         Out-String
+
+          $fullAudit = [PSCustomObject]@{
+              FileTimestamp  = $filenameTS
+              Timestamp      = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+              Hardware       = $hw
+              RegistryConfig = $registryInfo
+              UserProfiles   = $profiles
+              LocalAdmins    = $admins
+              ScheduledTasks = $tasks
+              EntraIDStatus  = $azureStatus.Trim()
+              InstalledApps  = $apps
+              Updates        = $updates
+          }
+
+          $fullAudit | ConvertTo-Json -Depth 10
+
+      register: audit_results
+      changed_when: false
+      # failed_when: audit_results.rc != 0
+
+    - name: Save Audit Report using Template
+      ansible.builtin.template:
+        src: audit_report.j2
+        dest: "{{ base_path }}/{{ inventory_hostname }}_{{ audit.FileTimestamp }}_Audit.txt"
+      vars:
+        audit: "{{ audit_results.output | first | from_json }}"
+      delegate_to: localhost
