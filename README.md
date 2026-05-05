@@ -12,8 +12,8 @@ The playbook collects critical system, security, and configuration data from rem
 
 * 🔍 Hardware inventory collection (Model, Serial Number, RAM)
 * 🖥️ OS & Registry insights (Windows Version, Build)
-* Security Updates
-* Installed Apps
+* 🛡️ Security updates tracking (Hotfix & patch visibility)
+* 📦 Installed applications inventory (Name, Version, Publisher)
 * 👤 User profile discovery via registry
 * 🔐 Local Administrators group audit
 * 📅 Scheduled tasks inspection
@@ -58,16 +58,149 @@ Windows_Hw_Inventory/
 * Ansible installed
 * WinRM configured for Windows connectivity
 
-### Managed Node (Windows)
+### 🖥️ Managed Node (Windows)
 
-* WinRM enabled
-* PowerShell 5.1+
-* Administrator privileges (recommended)
-* You can run below Powershell to Configure WinRM and other required details.
-    $url = "https://raw.githubusercontent.com/ansible/ansible-documentation/devel/examples/scripts/ConfigureRemotingForAnsible.ps1"
-    $file = "$env:temp\ConfigureRemotingForAnsible.ps1"
-    (New-Object -TypeName System.Net.WebClient).DownloadFile($url, $file)
-    powershell.exe -ExecutionPolicy ByPass -File $file
+To successfully manage Windows endpoints using Ansible, ensure the following prerequisites are met on each managed node:
+
+---
+
+#### ✅ Requirements
+
+* **WinRM (Windows Remote Management)** must be enabled and properly configured
+* **PowerShell 5.1 or later** must be available
+* **Administrator privileges** are recommended for full audit capabilities
+* Network connectivity between Control Node and Managed Node must be open (default WinRM ports: `5985` HTTP / `5986` HTTPS)
+
+---
+
+#### ⚙️ Quick Configuration (Recommended)
+
+Run the following PowerShell script on the Windows machine to automatically configure WinRM and required settings:
+
+```powershell
+$url = "https://raw.githubusercontent.com/ansible/ansible-documentation/devel/examples/scripts/ConfigureRemotingForAnsible.ps1"
+$file = "$env:temp\ConfigureRemotingForAnsible.ps1"
+(New-Object -TypeName System.Net.WebClient).DownloadFile($url, $file)
+powershell.exe -ExecutionPolicy ByPass -File $file
+```
+
+This script will:
+
+* Enable WinRM
+* Configure listeners
+* Adjust firewall rules
+* Set authentication methods compatible with Ansible
+
+---
+
+#### 🔍 Validation Checks (Important)
+
+After configuration, verify that the system is ready for Ansible:
+
+---
+
+##### 1. Check WinRM Service Status
+
+```powershell
+Get-Service WinRM
+```
+
+✅ Expected:
+
+```
+Status   Name   DisplayName
+------   ----   -----------
+Running  WinRM  Windows Remote Management
+```
+
+---
+
+##### 2. Verify WinRM Listener
+
+```powershell
+winrm enumerate winrm/config/listener
+```
+
+✅ Confirms that WinRM is actively listening for connections.
+
+---
+
+##### 3. Test WinRM Connectivity Locally
+
+```powershell
+Test-WSMan
+```
+
+✅ Should return protocol details without errors.
+
+---
+
+##### 4. Check PowerShell Version
+
+```powershell
+$PSVersionTable.PSVersion
+```
+
+✅ Ensure version is **5.1 or higher**
+
+---
+
+##### 5. Verify Local Administrator Access
+
+```powershell
+whoami /groups
+```
+
+✅ Confirm the user is part of the **Administrators** group
+
+---
+
+##### 6. Firewall Rule Validation
+
+```powershell
+Get-NetFirewallRule -DisplayName "*WinRM*"
+```
+
+✅ Ensure WinRM-related rules are enabled
+
+---
+
+##### 7. Remote Connectivity Test from Control Node (Linux)
+
+From your control node, run:
+
+```bash
+ansible windows -i inventory.ini -m win_ping
+```
+
+✅ Expected output:
+
+```
+"ping": "pong"
+```
+
+---
+
+#### ⚠️ Common Issues
+
+* WinRM service not running
+* Firewall blocking ports 5985/5986
+* Incorrect credentials or authentication method
+* PowerShell remoting not enabled
+* Non-admin user lacking required permissions
+
+---
+
+#### 💡 Pro Tip
+
+For production environments:
+
+* Prefer **HTTPS (5986)** over HTTP
+* Use **Kerberos or certificate-based authentication**
+* Avoid Basic authentication unless in lab environments
+
+---
+
 
 ---
 
