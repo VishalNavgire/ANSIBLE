@@ -1,0 +1,81 @@
+---
+- name: Out-of-band Intune Enrollment Recovery
+  hosts: intune_recovery_targets
+  gather_facts: no
+  serial: 10            # Batch control to reduce blast radius
+  any_errors_fatal: false
+
+  vars:
+    recovery_script_path: "C:\\Temp\\intune_recovery.ps1"
+    recovery_log_path: "C:\\Temp\\IntuneRecovery_{{ inventory_hostname }}.log"
+
+  pre_tasks:
+    - name: Ensure Temp directory exists
+      ansible.windows.win_file:
+        path: C:\Temp
+        state: directory
+
+    - name: Ensure local log directory exists on Fedora
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "./logs"
+        state: directory
+
+    - name: Validate WinRM connectivity
+      ansible.windows.win_ping:
+
+  tasks:
+    # -----------------------------
+    # Phase 1 – Preflight Checks
+    # -----------------------------
+    - name: Check current Entra/AAD join state
+      ansible.windows.win_command: dsregcmd /status
+      register: dsreg_status
+      changed_when: false
+
+    - name: Skip healthy devices
+      ansible.builtin.meta: end_host
+      when: >
+        "'AzureAdJoined : YES' in dsreg_status.stdout and
+         'DeviceAuthStatus : SUCCESS' in dsreg_status.stdout and 
+         'MdmUrl : https://enrollment.manage.microsoft.com/enrollmentserver/discovery.svc' in dsreg_status.stdout and 
+         vault_tenant_id in dsreg_status.stdout or
+         vault_tenant_name in dsreg_status.stdout"
+
+    # -----------------------------
+    # Phase 2 – Deploy Recovery Script
+    # -----------------------------
+    - name: Copy Intune recovery PowerShell script
+      ansible.windows.win_copy:
+        src: ../scripts/intune_recovery.ps1
+        dest: "{{ recovery_script_path }}"
+
+    # -----------------------------
+    # Phase 3 – Execute Recovery Logic
+    # -----------------------------
+    - name: Execute Intune enrollment recovery script
+      ansible.windows.win_shell: |
+        PowerShell.exe -ExecutionPolicy Bypass -File "{{ recovery_script_path }}"
+      register: recovery_result
+      async: 1800
+      poll: 30
+
+    # -----------------------------
+    # Phase 4 – Post Validation
+    # -----------------------------
+    - name: Re-check Entra/AAD join state
+      ansible.windows.win_command: dsregcmd /status
+      register: post_dsreg
+      changed_when: false
+
+    - name: Validate successful re-join
+      ansible.builtin.fail:
+        msg: "Device failed to rejoin Entra ID and Intune"
+      when: "'AzureAdJoined : YES' not in post_dsreg.stdout"
+
+  post_tasks:
+    - name: Collect recovery log
+      ansible.windows.win_fetch:
+        src: "{{ recovery_log_path }}"
+        dest: "./logs/{{ inventory_hostname }}.log"
+        flat: yes
